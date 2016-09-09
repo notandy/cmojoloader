@@ -71,6 +71,7 @@ int main(int argc, char *argv[])
 				break;
 			case 'd':
 				portname = optarg;
+				break;
 			case 'f':
 				binpath = optarg;
 				break;
@@ -114,7 +115,7 @@ int main(int argc, char *argv[])
 	}
 	
 	if(!binpath) {
-		fprintf(stderr, "Error: No flash file specified");
+		fprintf(stderr, "Error: No flash file specified\n");
 		return EXIT_FAILURE;
 	}
 
