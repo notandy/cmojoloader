@@ -20,15 +20,15 @@ write byte 'F', read byte 'R' if OK.
 write to ram
 write byte 'R', read byte 'R' if OK.
 
-write size of bitfile packed as <todo>
+write size of bitfile packed as little endian.
 read byte 'O' if OK.
 
 write bitfile stream
 read byte 'D' if OK.
 
 write byte 'S' to get size
-return size in format 0xAA 0x?? 0x?? 0x?? 0x??
-read rest of binary to validate.
+read byte 0xAA if OK, next four bytes in little endian specify flash size.
+read rest of bitstream to validate.
 
 load from flash
 write byte 'L', read byte 'D' if OK.
