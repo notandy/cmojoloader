@@ -60,11 +60,11 @@ int main(int argc, char *argv[])
 	ssize_t numRead;
 	char *portname = NULL;
 	char *binpath = NULL;
-	int clearflash = 0, verify = 0;
+	int clearflash = 0, verify = 0, ramonly = 0;
 	char buf[BUF_SIZE], len[4];
 	struct stat statbuf;
 
-	while ((c = getopt (argc, argv, "cvd:f:")) != -1)
+	while ((c = getopt (argc, argv, "crvd:f:")) != -1)
 		switch (c) {
 			case 'c':
 				clearflash = 1;
@@ -74,6 +74,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'f':
 				binpath = optarg;
+				break;
+			case 'r':
+				ramonly = 1;
 				break;
 			case 'v':
 				verify = 1;
@@ -87,12 +90,18 @@ int main(int argc, char *argv[])
 					fprintf (stderr, "Unknown option character `\\x%x'.\n", optopt);
 				return EXIT_FAILURE;
 			default:
-				fprintf(stderr, "%s: -d <dev> [-c] [-v] [-f <bin>]\n", argv[0]);
+				fprintf(stderr, "%s: -d <dev> [-c | -r | -v] [-f <bin>]\n", argv[0]);
+				fprintf(stderr, "\t-r : load to ram\n");
+				fprintf(stderr, "\t-v : verify flash after write\n");
+				fprintf(stderr, "\t-c : clear flash\n");
 				abort ();
 		}
 
 	if(!portname) {
-		fprintf(stderr, "%s: -d <dev> [-c] [-f <bin>]\n", argv[0]);
+		fprintf(stderr, "%s: -d <dev> [-c | -r | -v] [-f <bin>]\n", argv[0]);
+		fprintf(stderr, "\t-r : load to ram\n");
+		fprintf(stderr, "\t-v : verify flash after write\n");
+		fprintf(stderr, "\t-c : clear flash\n");
 		return EXIT_FAILURE;
 	}
 
@@ -109,7 +118,7 @@ int main(int argc, char *argv[])
 
 	restart_mojo(fd);
 
-	if(clearflash) {
+	if(!ramonly && clearflash) {
 		printf("Erasing flash...\n");
 		write(fd, "E", 1);
 		if(read(fd, buf, 1) == 1 && buf[0] == 'D')
@@ -127,7 +136,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 	
-	write(fd, verify ? "V" : "F", 1);
+	write(fd, ramonly ? "R" : (verify ? "V" : "F"), 1);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'R') {
 		printf("Phase 1: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
@@ -145,7 +154,7 @@ int main(int argc, char *argv[])
 
 	while((numRead = read(fd2, buf, BUF_SIZE)) > 0)
 		if (write(fd, buf, numRead) != numRead) {
-			fprintf(stderr, "Error flashing file %s\n", binpath);
+			fprintf(stderr, "Error loading file %s\n", binpath);
 			return EXIT_FAILURE;
 		}
 
@@ -154,7 +163,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (verify) {
+	if (!ramonly && verify) {
 		printf("Verifying...");
 		write(fd, "S", 1);
 		if (read(fd, buf, 5) != 5 || buf[0] !=  '\xaa') {
