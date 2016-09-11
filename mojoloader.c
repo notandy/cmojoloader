@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <inttypes.h>
 
-#define BUF_SIZE 1024
+#define BUF_SIZE 256
 
 int setup_serial(int fd)
 {
@@ -56,23 +56,30 @@ void restart_mojo(int fd)
 
 int main(int argc, char *argv[])
 {
-	int c, fd, fd2;
+	int c, fd, fd2, flash_size = 0;
 	ssize_t numRead;
 	char *portname = NULL;
 	char *binpath = NULL;
-	int clearflash = 0;
-	char buf[BUF_SIZE];
+	int clearflash = 0, verify = 0, ramonly = 0;
+	char buf[BUF_SIZE], len[4];
 	struct stat statbuf;
 
-	while ((c = getopt (argc, argv, "cd:f:")) != -1)
+	while ((c = getopt (argc, argv, "crvd:f:")) != -1)
 		switch (c) {
 			case 'c':
 				clearflash = 1;
 				break;
 			case 'd':
 				portname = optarg;
+				break;
 			case 'f':
 				binpath = optarg;
+				break;
+			case 'r':
+				ramonly = 1;
+				break;
+			case 'v':
+				verify = 1;
 				break;
 			case '?':
 				if (optopt == 'c')
@@ -83,12 +90,18 @@ int main(int argc, char *argv[])
 					fprintf (stderr, "Unknown option character `\\x%x'.\n", optopt);
 				return EXIT_FAILURE;
 			default:
-				fprintf(stderr, "%s: -d <dev> [-c] [-f <bin>]\n", argv[0]);
+				fprintf(stderr, "%s: -d <dev> [-c | -r | -v] [-f <bin>]\n", argv[0]);
+				fprintf(stderr, "\t-r : load to ram\n");
+				fprintf(stderr, "\t-v : verify flash after write\n");
+				fprintf(stderr, "\t-c : clear flash\n");
 				abort ();
 		}
 
 	if(!portname) {
-		fprintf(stderr, "%s: -d <dev> [-c] [-f <bin>]\n", argv[0]);
+		fprintf(stderr, "%s: -d <dev> [-c | -r | -v] [-f <bin>]\n", argv[0]);
+		fprintf(stderr, "\t-r : load to ram\n");
+		fprintf(stderr, "\t-v : verify flash after write\n");
+		fprintf(stderr, "\t-c : clear flash\n");
 		return EXIT_FAILURE;
 	}
 
@@ -105,8 +118,8 @@ int main(int argc, char *argv[])
 
 	restart_mojo(fd);
 
-	if(clearflash) {
-		printf("Erasing flash...");
+	if(!ramonly && clearflash) {
+		printf("Erasing flash...\n");
 		write(fd, "E", 1);
 		if(read(fd, buf, 1) == 1 && buf[0] == 'D')
 			printf("Erasing done. Read %c\n", buf[0]);
@@ -114,7 +127,7 @@ int main(int argc, char *argv[])
 	}
 	
 	if(!binpath) {
-		fprintf(stderr, "Error: No flash file specified");
+		fprintf(stderr, "Error: No flash file specified\n");
 		return EXIT_FAILURE;
 	}
 
@@ -123,13 +136,12 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 	
-	write(fd, "F", 1);
+	write(fd, ramonly ? "R" : (verify ? "V" : "F"), 1);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'R') {
 		printf("Phase 1: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
 	}
 
-	char len[4];
 	for (int i = 0; i < 4; i++) {
 		len[i] = ((intmax_t) statbuf.st_size >> (i * 8) & 0xff);
 	}
@@ -142,7 +154,7 @@ int main(int argc, char *argv[])
 
 	while((numRead = read(fd2, buf, BUF_SIZE)) > 0)
 		if (write(fd, buf, numRead) != numRead) {
-			fprintf(stderr, "Error flashing file %s\n", binpath);
+			fprintf(stderr, "Error loading file %s\n", binpath);
 			return EXIT_FAILURE;
 		}
 
@@ -150,7 +162,44 @@ int main(int argc, char *argv[])
 		printf("Phase 3: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
 	}
+
+	if (!ramonly && verify) {
+		printf("Verifying...");
+		write(fd, "S", 1);
+		if (read(fd, buf, 5) != 5 || buf[0] !=  '\xaa') {
+			printf("Failed. Mojo didn't not send valid header. Read %c\n", buf[0]);			
+			return EXIT_FAILURE;
+		}
+
+		for (int i = 0; i < 4; i++) {
+			flash_size |= ((intmax_t)buf[i+1] & 0xff) << (i * 8);
+		}
+		// substract 5 due to start byte (\xaa + 4 bytes of prepended length)
+		if ((flash_size - 5) != statbuf.st_size) {
+			printf("Failed. Size mismatch. %d vs %d\n", flash_size - 5, statbuf.st_size);
+			return EXIT_FAILURE;
+		}
+		lseek(fd2, 0, SEEK_SET);
+		int need = flash_size - 5;
+		int want = (need > BUF_SIZE) ? BUF_SIZE : need;
+		int loc = 1;
+		while((numRead = read(fd, buf, want)) > 0) {
+			char tmp[BUF_SIZE];
+			need -= numRead;
+			want = (need > BUF_SIZE) ? BUF_SIZE : need;
+			read(fd2, tmp, numRead);
+			for(int i = 0; i < numRead; i++, loc++) {
+				if (buf[i] != tmp[i]) {
+					printf("Failed. Data mismatch. Got %c expected %c @ offset %d\n", buf[i], tmp[i], loc);
+					return EXIT_FAILURE;
+				}
+			}
+		}
+		printf("OK\n");
+	}
+
 	write(fd, "L", 1);
+	usleep(1000000);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'D') {
 		printf("Phase 4: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
