@@ -16,25 +16,24 @@
 
 int setup_serial(int fd)
 {
+	int ret = 0;
 	struct termios tty;
 	memset(&tty, 0, sizeof tty);
 	tcgetattr(fd, &tty);
 	cfsetospeed(&tty, B115200);
 	cfsetispeed(&tty, B115200);
-	tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-	tty.c_iflag &= ~IGNBRK;
-	tty.c_lflag = 0;
-	tty.c_oflag = 0;
-	tty.c_cc[VMIN]  = 0;
-	tty.c_cc[VTIME] = 5;
-	tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-	tty.c_cflag |= (CLOCAL | CREAD);
-	tty.c_cflag &= ~(PARENB | PARODD);
-	tty.c_cflag |= 0;
-	tty.c_cflag &= ~CSTOPB;
-	tty.c_cflag &= ~CRTSCTS;
 
-	return tcsetattr(fd, TCSANOW, &tty);
+	/* put terminal in raw mode */
+	tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
+			| INLCR | IGNCR | ICRNL | IXON);
+	tty.c_oflag &= ~OPOST;
+	tty.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+	tty.c_cflag &= ~(CSIZE | PARENB);
+	tty.c_cflag |= CS8;
+
+	ret = tcsetattr(fd, TCSANOW, &tty);
+	tcflush(fd, TCIOFLUSH);
+	return ret;
 }
 
 void restart_mojo(int fd)
