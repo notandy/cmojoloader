@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
 			read(fd2, tmp, numRead);
 			for(int i = 0; i < numRead; i++, loc++) {
 				if (buf[i] != tmp[i]) {
-					printf("Failed. Data mismatch. Got %c expected %c @ offset %d\n", buf[i], tmp[i], loc);
+					printf("Failed. Data mismatch. Got %02x expected %02x @ offset %d\n", buf[i], tmp[i], loc);
 					return EXIT_FAILURE;
 				}
 			}
