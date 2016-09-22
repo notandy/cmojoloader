@@ -11,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <inttypes.h>
+#include <sys/select.h>
 
 #define BUF_SIZE 256
 
@@ -51,6 +52,24 @@ void restart_mojo(int fd)
 		status |= TIOCM_DTR;
 		ioctl(fd, TIOCMSET, &status);
 		usleep(5*1000);
+	}
+}
+
+void wait_for_fd(int fd, int write)
+{
+	fd_set fds;
+	struct timeval tv;
+
+	FD_ZERO(&fds);
+	FD_SET(fd, &fds);
+
+	tv.tv_sec = 30;
+	tv.tv_usec = 0;
+
+	if (write) {
+		select(FD_SETSIZE, NULL, &fds, NULL, &tv);
+	} else { 
+		select(FD_SETSIZE, &fds, NULL, NULL, &tv);
 	}
 }
 
@@ -121,6 +140,7 @@ int main(int argc, char *argv[])
 	if(!ramonly && clearflash) {
 		printf("Erasing flash...\n");
 		write(fd, "E", 1);
+		wait_for_fd(fd, 0);
 		if(read(fd, buf, 1) == 1 && buf[0] == 'D')
 			printf("Erasing done. Read %c\n", buf[0]);
 		return EXIT_SUCCESS;	
@@ -137,6 +157,7 @@ int main(int argc, char *argv[])
 	}
 	
 	write(fd, ramonly ? "R" : (verify ? "V" : "F"), 1);
+	wait_for_fd(fd, 0);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'R') {
 		printf("Phase 1: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
@@ -147,6 +168,7 @@ int main(int argc, char *argv[])
 	}
 	
 	write(fd, len, 4);
+	wait_for_fd(fd, 0);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'O') {
 		printf("Phase 2: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
@@ -158,6 +180,7 @@ int main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 
+	wait_for_fd(fd, 0);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'D') {
 		printf("Phase 3: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
@@ -166,6 +189,7 @@ int main(int argc, char *argv[])
 	if (!ramonly && verify) {
 		printf("Verifying...");
 		write(fd, "S", 1);
+		wait_for_fd(fd, 0);
 		if (read(fd, buf, 5) != 5 || buf[0] !=  '\xaa') {
 			printf("Failed. Mojo didn't not send valid header. Read %c\n", buf[0]);			
 			return EXIT_FAILURE;
@@ -183,10 +207,12 @@ int main(int argc, char *argv[])
 		int need = flash_size - 5;
 		int want = (need > BUF_SIZE) ? BUF_SIZE : need;
 		int loc = 1;
+		wait_for_fd(fd, 0);
 		while((numRead = read(fd, buf, want)) > 0) {
 			char tmp[BUF_SIZE];
 			need -= numRead;
 			want = (need > BUF_SIZE) ? BUF_SIZE : need;
+			wait_for_fd(fd2, 0);
 			read(fd2, tmp, numRead);
 			for(int i = 0; i < numRead; i++, loc++) {
 				if (buf[i] != tmp[i]) {
@@ -194,12 +220,13 @@ int main(int argc, char *argv[])
 					return EXIT_FAILURE;
 				}
 			}
+			wait_for_fd(fd, 0);
 		}
 		printf("OK\n");
 	}
 
 	write(fd, "L", 1);
-	usleep(1000000);
+	wait_for_fd(fd, 0);
 	if(read(fd, buf, 1) != 1 || buf[0] != 'D') {
 		printf("Phase 4: Mojo didn't respond. Read %c\n", buf[0]);
 		return EXIT_FAILURE;
