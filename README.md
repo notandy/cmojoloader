@@ -34,7 +34,7 @@ load from flash
 write byte 'L', read byte 'D' if OK.
 ~~~~
 
-## latest firwmware
+## latest firmware
 this loader requires the latest firmware be present on the device.
 to update the firmware, short the `gnd` and `rst` pins on the back of the board during power up.
 
