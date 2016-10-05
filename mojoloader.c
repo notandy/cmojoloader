@@ -225,11 +225,13 @@ int main(int argc, char *argv[])
 		printf("OK\n");
 	}
 
-	write(fd, "L", 1);
-	wait_for_fd(fd, 0);
-	if(read(fd, buf, 1) != 1 || buf[0] != 'D') {
-		printf("Phase 4: Mojo didn't respond. Read %c\n", buf[0]);
-		return EXIT_FAILURE;
+	if (!ramonly) {
+		write(fd, "L", 1);
+		wait_for_fd(fd, 0);
+		if(read(fd, buf, 1) != 1 || buf[0] != 'D') {
+			printf("Phase 4: Mojo didn't respond. Read %c\n", buf[0]);
+			return EXIT_FAILURE;
+		}
 	}
 
 	return EXIT_SUCCESS;
