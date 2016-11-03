@@ -5,3 +5,8 @@ mojoloader: mojoloader.c
 
 clean:
 	$(RM) mojoloader
+
+.PHONY: install
+install: mojoloader
+	install --mode=0755 --owner root --group root --dir $(DESTDIR)/bin
+	install --mode=0755 --owner root --group root $^ $(DESTDIR)/bin
